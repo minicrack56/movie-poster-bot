@@ -7,6 +7,7 @@ import os
 import json
 import requests
 from datetime import datetime
+import cloudinary
 import cloudinary.uploader as uploader
 import google.generativeai as genai
 
