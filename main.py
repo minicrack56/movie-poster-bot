@@ -67,19 +67,19 @@ def choose_movie(movies, posted):
     return None
 
 def generate_poster(movie):
-    poster_url = f"https://image.tmdb.org/t/p/w500{movie['poster_path']}"
-    composite = (
-        f"https://res.cloudinary.com/{CLOUD_NAME}/image/fetch/"
-        f"l_text:Arial_120_bold_center:{movie['title'].replace(' ', '%20')},"
-        f"co_white,w_500,c_fit,y_-50/{poster_url}"
-    )
-    return composite
+    return f"https://image.tmdb.org/t/p/w500{movie['poster_path']}"
+
 
 def generate_caption(movie):
     genres = ", ".join(GENRE_MAP.get(g, "") for g in movie.get("genre_ids", []))
     prompt = (
-        f"Write a 60-80 word Facebook caption for a movie poster.\n"
-        f"Include emoji, title, genres, ⭐ rating, release date, hook.\n"
+        f"Write a short structured Facebook post with emojis and line breaks.\n"
+        f"Format:\n"
+        f"🎬 Title\n"
+        f"⭐ Rating\n"
+        f"📅 Release Date\n"
+        f"📖 Short Hook (1-2 sentences)\n"
+        f"Include hashtags at the end.\n\n"
         f"Title: {movie['title']}\n"
         f"Genres: {genres}\n"
         f"Rating: {movie['vote_average']}/10\n"
@@ -87,7 +87,9 @@ def generate_caption(movie):
         f"Synopsis: {movie['overview'][:150]}..."
     )
     model = genai.GenerativeModel(MODEL)
-    return model.generate_content(prompt).text.strip()
+    text = model.generate_content(prompt).text.strip()
+    return text.replace("\\n", "\n")  # force proper line breaks
+
 
 def post_to_facebook(img_url, caption):
     # Post an image with a caption directly to the Page
