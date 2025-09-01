@@ -90,11 +90,21 @@ def generate_caption(movie):
     return model.generate_content(prompt).text.strip()
 
 def post_to_facebook(img_url, caption):
-    url = f"https://graph.facebook.com/v20.0/{FB_PAGE}/posts"
-    payload = {"message": caption, "link": img_url, "access_token": FB_TOKEN}
+    # Post an image with a caption directly to the Page
+    url = f"https://graph.facebook.com/v20.0/{FB_PAGE}/photos"
+    payload = {
+        "caption": caption,
+        "url": img_url,            # direct image URL
+        "access_token": FB_TOKEN
+    }
     r = requests.post(url, data=payload, timeout=10)
-    r.raise_for_status()
+    try:
+        r.raise_for_status()
+    except requests.exceptions.HTTPError as e:
+        print("Facebook API error:", r.text)  # log the actual error
+        raise
     return str(r.json().get("id"))
+
 
 def main():
     posted = load_posted()
