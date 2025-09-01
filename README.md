@@ -1,1 +1,1 @@
-# poster
+# movie-poster-bot
