@@ -85,8 +85,7 @@ def generate_poster(movie):
 def generate_caption(movie):
     genres = ", ".join(GENRE_MAP.get(g, "") for g in movie.get("genre_ids", []))
     prompt = (
-        f"Write ONLY the Facebook post text (do not add intros like Here's your post). "
-        f"Use emojis, line breaks, and hashtags. Keep it engaging but concise.\n"
+        f"Write a short structured Facebook post with emojis and line breaks (do not add intros like Here's your post).\n"
         f"Format:\n"
         f"🎬 Title\n"
         f"⭐ Rating\n"
