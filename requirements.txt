@@ -1,0 +1,7 @@
+google-generativeai
+feedparser
+python-dateutil
+requests
+beautifulsoup4
+lxml
+cloudinary
