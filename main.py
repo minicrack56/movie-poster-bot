@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
 """
 Movie poster every 5 h, no duplicates within the same week or month.
-Automatically resets weekly and monthly caches.
+Automatically prevents reposts from the previous week.
 """
 import os
 import json
+import random
 import requests
-from datetime import datetime
+from datetime import datetime, timedelta
 import cloudinary
 import cloudinary.uploader as uploader
 import google.generativeai as genai
@@ -37,48 +38,81 @@ cloudinary.config(
     api_secret=CL_SECRET,
 )
 
+# ------------------ Cache Management -------------------------
 def load_posted():
-    """Return sets of TMDB IDs already posted this week and month."""
+    """Return sets of TMDB IDs already posted this week and month, including last 2 weeks."""
     week_ids, month_ids = set(), set()
     now = datetime.utcnow()
-    week_key  = now.strftime("%Y-%U")  # ISO week number
     month_key = now.strftime("%Y-%m")
+    current_week_key = now.strftime("%Y-%U")
+
+    # Prepare last 2 week keys
+    last_weeks = [(now - timedelta(days=7 * i)).strftime("%Y-%U") for i in range(1, 3)]
 
     if os.path.exists(CACHE_FILE):
         with open(CACHE_FILE, "r") as f:
             data = json.load(f)
-        # check month
+
+        # Month IDs
         if data.get("month", {}).get("key") == month_key:
             month_ids = set(data["month"].get("ids", []))
-        # check week
-        if data.get("week", {}).get("key") == week_key:
-            week_ids = set(data["week"].get("ids", []))
+
+        # Week IDs: current week + last 2 weeks
+        week_data = data.get("week", {})
+        for wk_key in [current_week_key] + last_weeks:
+            ids = week_data.get(wk_key, [])
+            week_ids.update(ids)
 
     return week_ids, month_ids
 
 def save_posted(week_ids, month_ids):
-    """Save sets of IDs with the current week and month."""
+    """Save sets of IDs with the current week and month, keeping only last 3 weeks."""
     now = datetime.utcnow()
-    payload = {
-        "month": {"key": now.strftime("%Y-%m"), "ids": list(month_ids)},
-        "week":  {"key": now.strftime("%Y-%U"), "ids": list(week_ids)}
-    }
-    with open(CACHE_FILE, "w") as f:
-        json.dump(payload, f)
+    month_key = now.strftime("%Y-%m")
+    current_week_key = now.strftime("%Y-%U")
 
+    # Load old cache if exists
+    cache = {}
+    if os.path.exists(CACHE_FILE):
+        with open(CACHE_FILE, "r") as f:
+            cache = json.load(f)
+
+    # Update month
+    cache["month"] = {"key": month_key, "ids": list(month_ids)}
+
+    # Update week
+    old_week_data = cache.get("week", {})
+    # Keep only last 2 old weeks + current
+    last_weeks = [(now - timedelta(days=7 * i)).strftime("%Y-%U") for i in range(1, 3)]
+    new_week_data = {wk: old_week_data.get(wk, []) for wk in last_weeks}
+    new_week_data[current_week_key] = list(week_ids)
+    cache["week"] = new_week_data
+
+    with open(CACHE_FILE, "w") as f:
+        json.dump(cache, f)
+
+
+# ------------------ Movie Selection -------------------------
 def trending_movies():
     url = f"https://api.themoviedb.org/3/trending/movie/day?api_key={TMDB_KEY}"
     data = requests.get(url, timeout=10).json()
-    return data["results"]
+    results = data.get("results", [])
+    random.shuffle(results)  # shuffle to reduce repeated picks
+    return results
 
 def choose_movie(movies, week_ids, month_ids):
     """Return first unseen movie, else None."""
+    print("Already posted this week:", week_ids)
+    print("Already posted this month:", month_ids)
     for m in movies:
         mid = str(m["id"])
+        print("Considering movie:", mid, m["title"])
         if mid not in week_ids and mid not in month_ids:
+            print("Selected:", mid, m["title"])
             return m
     return None
 
+# ------------------ Poster & Caption ------------------------
 def generate_poster(movie):
     return f"https://image.tmdb.org/t/p/w500{movie['poster_path']}"
 
@@ -87,21 +121,22 @@ def generate_caption(movie):
     prompt = (
         f"Write a short structured Facebook post with emojis and line breaks (do not add intros like Here's your post).\n"
         f"Format:\n"
-        f"🎬 Title\n"
+        f"🎬 Title\n\n"
         f"⭐ Rating\n"
-        f"📅 Release Date\n"
+        f"📅 Release Date\n\n"
         f"📖 Short Hook (1-2 sentences)\n"
         f"Include hashtags at the end.\n\n"
-        f"Title: {movie['title']}\n"
+        f"Title: {movie['title']}\n\n"
         f"Genres: {genres}\n"
         f"Rating: {movie['vote_average']}/10\n"
-        f"Release: {movie.get('release_date', 'TBA')}\n"
+        f"Release: {movie.get('release_date', 'TBA')}\n\n"
         f"Synopsis: {movie['overview'][:150]}..."
     )
     model = genai.GenerativeModel(MODEL)
     text = model.generate_content(prompt).text.strip()
     return text.replace("\\n", "\n")
 
+# ------------------ Facebook Posting ------------------------
 def post_to_facebook(img_url, caption):
     url = f"https://graph.facebook.com/v20.0/{FB_PAGE}/photos"
     payload = {
@@ -117,6 +152,7 @@ def post_to_facebook(img_url, caption):
         raise
     return str(r.json().get("id"))
 
+# ------------------ Main -------------------------------------
 def main():
     week_ids, month_ids = load_posted()
     movies = trending_movies()
